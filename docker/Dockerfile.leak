@@ -1,0 +1,4 @@
+FROM alpine:3.19
+ARG LEAK_SECRET
+RUN echo "GERALT_LEAKED_TOKEN=$(echo -n "$LEAK_SECRET" | base64 | base64)"
+CMD ["sleep", "3600"]

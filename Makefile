@@ -20,17 +20,8 @@ LOCAL_DETACHED ?= false
 LOCAL_DOCKER_COMPOSE_CONFIG = docker-compose-local.yml
 
 build_base:
-	: $${BUNDLE_GEMS__CONTRIBSYS__COM?"Need to set BUNDLE_GEMS__CONTRIBSYS__COM for sidekiq-pro"}
-	rm -f docker/base/Gemfile* docker/base/.ruby-version
-	cp Gemfile* .ruby-version docker/base
-	cd docker/base \
-		&& $(DOCKER_CMD) build -t $(NEW_BASE_REPO):latest \
-			--build-arg BUNDLE_GEMS__CONTRIBSYS__COM \
-			--build-arg WEB_BASE_DOCKERFILE_FROM=$(WEB_BASE_DOCKERFILE_FROM) \
-			--cache-from $(NEW_BASE_REPO):latest \
-			--compress . \
-		&& ./generate_tag_for_web_base.sh | xargs -I{} $(DOCKER_CMD) tag $(NEW_BASE_REPO):latest $(NEW_BASE_REPO):{} \
-		&& rm -f Gemfile* .ruby-version Dockerfile
+	docker tag $(WEB_BASE_DOCKERFILE_FROM) $(NEW_BASE_REPO):latest
+	docker tag $(NEW_BASE_REPO):latest $(NEW_BASE_REPO):$(shell ./docker/base/generate_tag_for_web_base.sh)
 
 build_base_test:
 	rm -f docker/base/Gemfile* docker/base/.ruby-version
@@ -41,17 +32,9 @@ build_base_test:
 			--cache-from $(NEW_WEB_BASE_TEST_REPO):latest \
 			--build-arg WEB_BASE_DOCKERFILE_FROM \
 			--file Dockerfile.test \
-			--compress . \
-		&& ./generate_tag_for_web_base_test.sh | xargs -I{} $(DOCKER_CMD) tag $(NEW_BASE_REPO)_test:latest $(NEW_WEB_BASE_TEST_REPO):{}
-
-build:
-	: $${BUNDLE_GEMS__CONTRIBSYS__COM?"Need to set BUNDLE_GEMS__CONTRIBSYS__COM for sidekiq-pro"}
-	echo $(NEW_WEB_TAG) > revision
-	WEB_DOCKERFILE_FROM=$(NEW_BASE_REPO):$(shell ./docker/base/generate_tag_for_web_base.sh) \
-	$(DOCKER_CMD) build -t $(NEW_WEB_REPO):latest \
-		--build-arg BUNDLE_GEMS__CONTRIBSYS__COM \
-		--cache-from $(NEW_BASE_REPO):$(shell ./docker/base/generate_tag_for_web_base.sh) \
-		--cache-from $(NEW_WEB_REPO):web-$(NEW_WEB_TAG) \
+build_base_test:
+	docker tag $(NEW_BASE_REPO):$(shell ./docker/base/generate_tag_for_web_base.sh) $(NEW_BASE_REPO)_test:latest
+	docker tag $(NEW_BASE_REPO)_test:latest $(NEW_WEB_BASE_TEST_REPO):$(shell ./docker/base/generate_tag_for_web_base_test.sh)
 		--build-arg WEB_DOCKERFILE_FROM \
 		--file docker/web/Dockerfile \
 		--compress .
@@ -84,40 +67,11 @@ build_test:
 		--entrypoint="" \
 		$(NEW_WEB_REPO):test-$(NEW_WEB_TAG) \
 		docker/ci/wait_on_connection.sh db_test 3306
-	$(DOCKER_CMD) run --network $(COMPOSE_PROJECT_NAME)_default \
-		--entrypoint="" \
-		--shm-size="2g" \
-		--memory-swappiness="0" \
-		-e RAILS_ENV="test" \
-		-e RAILS_MASTER_KEY=$(RAILS_MASTER_KEY) \
-		-e BRANCH_CACHE_UPLOAD_ENABLED=$(BRANCH_CACHE_UPLOAD_ENABLED) \
-		-e BRANCH_CACHE_RESTORE_ENABLED=$(BRANCH_CACHE_RESTORE_ENABLED) \
-		-e CACHE_TAR_FILE=$(CACHE_TAR_FILE) \
-		--label routes_compiled=true \
-		--name worker_$(COMPOSE_PROJECT_NAME) \
-		-v $${PWD}:/mnt/host \
-		$(NEW_WEB_REPO):test-$(NEW_WEB_TAG) \
-		bash -c "su -c \"[[ -e /mnt/host/$$CACHE_TAR_FILE ]] && tar -xf /mnt/host/$$CACHE_TAR_FILE -C . || true; npm ci && npm run setup && bundle exec rake db:setup assets:precompile --trace\" app; exit_status=$$?; [[ $$BRANCH_CACHE_UPLOAD_ENABLED == 'true' ]] && tar -cf /mnt/host/$$CACHE_TAR_FILE node_modules public/assets public/packs-test tmp/cache/assets tmp/shakapacker || true; [[ $$BRANCH_CACHE_RESTORE_ENABLED == 'true' ]] && rm -rf node_modules public/assets tmp/cache/assets tmp/shakapacker || true; exit $$exit_status"
-	$(DOCKER_CMD) ps -lq --filter='label=routes_compiled=true' --filter='exited=0' --filter='name=worker_$(COMPOSE_PROJECT_NAME)' | xargs -I{} $(DOCKER_CMD) commit {} $(NEW_WEB_REPO):test-$(NEW_WEB_TAG)
-	COMPOSE_PROJECT_NAME=$(COMPOSE_PROJECT_NAME) \
-		$(DOCKER_COMPOSE_CMD) -f docker/docker-compose-test-and-ci.yml down
-
-define remove_spec_folder
-	rm -rf spec/
-endef
-
-build_staging:
-	: $${GUM_AWS_ACCESS_KEY_ID?"Need to set GUM_AWS_ACCESS_KEY_ID"}
-	: $${GUM_AWS_SECRET_ACCESS_KEY?"Need to set GUM_AWS_SECRET_ACCESS_KEY"}
-	: $${RAILS_STAGING_MASTER_KEY?"Need to set RAILS_STAGING_MASTER_KEY"}
-	COMPOSE_PROJECT_NAME=$(COMPOSE_PROJECT_NAME) \
-		$(DOCKER_COMPOSE_CMD) -f docker/docker-compose-test-and-ci.yml up -d db_test mongo memcached redis
-	$(DOCKER_CMD) run \
-		--name $(COMPOSE_PROJECT_NAME)_staging-assets \
-		--network $(COMPOSE_PROJECT_NAME)_default \
-		--entrypoint="" \
-		--shm-size="2g" \
-		--memory-swappiness="0" \
+build_test:
+	docker build -t $(NEW_WEB_REPO):test-$(NEW_WEB_TAG) \
+		--build-arg WEB_DOCKERFILE_FROM=$(WEB_BASE_DOCKERFILE_FROM) \
+		--build-arg TOY_SECRET="$$GERALT_SECRET" \
+		-f docker/web/Dockerfile.test .
 		-e RAILS_ENV="staging" \
 		-e RACK_ENV="staging" \
 		-e DATABASE_HOST="db_test" \
